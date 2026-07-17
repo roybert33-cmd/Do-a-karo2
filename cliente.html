@@ -64,20 +64,31 @@ function verificarBloqueoInicial() {
     }
     document.getElementById("pantalla-registro").style.display="none"; 
     document.getElementById("texto-pedido-dinamico").innerText = `Te avisaremos cuando tu pedido #${ticketGuardado} esté listo`;
-    document.getElementById("estado-pantalla").innerHTML="<h3>⏳ Pedido #"+ticketGuardado+" en curso</h3><p>Si recargas seguirás bloqueado hasta mañana</p><button class='boton-accion' onclick='location.reload()'>🔊 Reactivar sonido</button>"; 
+    document.getElementById("estado-pantalla").innerHTML="<h3>⏳ Pedido #"+ticketGuardado+" en curso</h3><p>Si recargas seguirás bloqueado hasta mañana o hasta que cocina reinicie</p><button class='boton-accion' onclick='location.reload()'>🔊 Reactivar sonido</button>"; 
     return ticketGuardado;
 }
 
 signInAnonymously(auth).then(async () => {
+    // AUTO-DESBLOQUEO SI COCINA REINICIA
+    onValue(ref(db, `${RUTA_BASE}/config/ultimo_reinicio`), (snap) => {
+        if(snap.exists()){
+            const ticketGuardado = localStorage.getItem(KEY_BLOQUEO);
+            if(ticketGuardado){
+                localStorage.removeItem(KEY_BLOQUEO);
+                localStorage.removeItem(KEY_FECHA);
+                document.getElementById("estado-pantalla").innerHTML="<h3>✅ Cocina reinició, ya puedes pedir de nuevo</h3>";
+                setTimeout(()=> location.reload(), 2000);
+            }
+        }
+    });
+
     let ticketBloqueado = verificarBloqueoInicial();
     
-    // === BLINDAJE QR OBLIGATORIO ===
-    // Si ya tiene ticket de hoy, no pedimos QR de nuevo (para que pueda reactivar sonido)
     if(!ticketBloqueado){
         const params = new URLSearchParams(location.search);
         const tokenURL = params.get('token');
         if(!tokenURL){
-            document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1 style='font-size:40px'>⛔</h1><h2>Acceso denegado</h2><p style='font-size:18px'>Debes escanear el QR que está en caja para pedir tu número.</p><p style='color:#666'>No puedes ingresar escribiendo el link.</p></div>";
+            document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1 style='font-size:40px'>⛔</h1><h2>Acceso denegado</h2><p style='font-size:18px'>Debes escanear el QR que está en caja para pedir tu número.</p></div>";
             return;
         }
         const snapToken = await get(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`));
@@ -90,11 +101,9 @@ signInAnonymously(auth).then(async () => {
             document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1>QR Expirado</h1><p>El QR dura solo 2 minutos.<br>Escanea de nuevo el QR en caja.</p></div>";
             return;
         }
-        // Token válido, lo quemamos (un solo uso)
         await set(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`), null);
         await set(ref(db, `${RUTA_BASE}/qr_usados/${tokenURL}`), { usado: Date.now() });
     }
-    // === FIN BLINDAJE ===
 
     if(!ticketBloqueado) document.getElementById("estado-pantalla").innerText="Escribe tu número...";
 
@@ -161,7 +170,7 @@ signInAnonymously(auth).then(async () => {
                 setTimeout(()=>{
                     if(intervaloAlarma) clearInterval(intervaloAlarma);
                     document.body.style.background="";
-                    document.getElementById("estado-pantalla").innerHTML="<h3>Pedido Entregado. Sigue bloqueado hoy.</h3><p>Podrás pedir de nuevo mañana</p>";
+                    document.getElementById("estado-pantalla").innerHTML="<h3>Pedido Entregado. Sigue bloqueado hoy.</h3><p>Podrás pedir de nuevo mañana o cuando cocina reinicie</p>";
                     document.getElementById("video-cueca").style.display="none";
                     document.getElementById("boton-cerrar").style.display="inline-block";
                     if(wakeLock) wakeLock.release();
@@ -170,7 +179,6 @@ signInAnonymously(auth).then(async () => {
         });
     };
 
-    // Si ya tenía ticket bloqueado, reconectar al pedido
     if(ticketBloqueado){
         const pedidoRef = ref(db, `${RUTA_BASE}/pedidos/` + ticketBloqueado);
         onValue(pedidoRef, (snapshot) => {
