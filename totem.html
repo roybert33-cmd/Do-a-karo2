@@ -4,17 +4,24 @@
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Totem QR - Doña Karo</title>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
-<style>body{text-align:center;font-family:sans-serif;padding:20px} #qrcode{display:flex;justify-content:center;margin:20px} #log{color:red}</style>
+<style>
+  body{text-align:center;font-family:sans-serif;padding:20px; background: white;}
+  #qrcode{display:flex;justify-content:center;margin:20px}
+  #log{color:#666; font-size: 12px;}
+  #estado{font-size: 18px; font-weight: bold; color: #2563eb;}
+</style>
 </head>
 <body>
 <h1>ESCANEA PARA PEDIR</h1>
 <div id="qrcode"></div>
-<p id="timer" style="font-size:20px;font-weight:bold"></p>
+<p id="estado">Generando QR...</p>
+<p id="timer" style="font-size:16px;"></p>
 <p id="log"></p>
 <p>Doña Karo</p>
+
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-import { getDatabase, ref, set } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+import { getDatabase, ref, set, onValue, off } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app-check.js";
 
@@ -25,19 +32,57 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 const RUTA_BASE = 'dona_karo';
 
+let intervaloTimer = null;
+let listenerTokenActual = null;
+let tokenActual = null;
+
 signInAnonymously(auth).then(()=>{
   function generarQR(){
-    const token = "t" + Date.now() + Math.floor(Math.random()*9999);
+    // Limpia listener del QR anterior
+    if(listenerTokenActual && tokenActual){
+        off(ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`), listenerTokenActual);
+    }
+    clearInterval(intervaloTimer);
+
+    tokenActual = "t" + Date.now() + Math.floor(Math.random()*9999);
     const expira = Date.now() + 120000;
-    set(ref(db, `${RUTA_BASE}/qr_activos/${token}`), { expira: expira })
-      .then(()=>{ document.getElementById("log").innerText = "QR OK: " + token; })
-      .catch(e=>{ document.getElementById("log").innerText = "ERROR FIREBASE: " + e.code + " - " + e.message; });
+    
+    set(ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`), { expira: expira })
+      .then(()=>{ 
+        document.getElementById("log").innerText = "QR: " + tokenActual;
+        document.getElementById("estado").innerText = "✅ QR LISTO - ESCANEA";
+        document.getElementById("estado").style.color = "#16a34a";
+      })
+      .catch(e=>{ document.getElementById("log").innerText = "ERROR: " + e.message; });
+
     const baseUrl = location.href.substring(0, location.href.lastIndexOf('/') + 1);
-    const url = baseUrl + "cliente.html?token=" + token;
+    const url = baseUrl + "cliente.html?token=" + tokenActual;
+    
     document.getElementById("qrcode").innerHTML="";
     new QRCode(document.getElementById("qrcode"), { text: url, width: 300, height: 300 });
-    let seg=120; clearInterval(window.t); window.t=setInterval(()=>{ seg--; document.getElementById("timer").innerText=`Expira en ${seg}s`; if(seg<=0) generarQR(); },1000);
+
+    // --- DETECTOR DE ESCANEO ---
+    // Si el cliente escanea, el cliente borra el token. Lo detectamos y generamos uno nuevo al tiro.
+    const tokenRef = ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`);
+    listenerTokenActual = onValue(tokenRef, (snap) => {
+        if(!snap.exists()){
+            document.getElementById("estado").innerText = "⚡ Cliente detectado, generando nuevo...";
+            document.getElementById("estado").style.color = "#ea580c";
+            setTimeout(generarQR, 500); // Genera nuevo en 0.5 seg para agilizar fila
+        }
+    });
+
+    // Timer de respaldo por si nadie escanea, expira a los 120s
+    let seg=120;
+    intervaloTimer = setInterval(()=>{ 
+        seg--; 
+        document.getElementById("timer").innerText=`Se renueva en ${seg}s`;
+        if(seg<=0){
+            generarQR();
+        }
+    },1000);
   }
+  
   generarQR();
 });
 </script>
