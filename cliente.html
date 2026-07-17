@@ -13,9 +13,9 @@
             <p id="texto-pedido-dinamico" style="font-size:18px; font-weight:600; margin-bottom:15px;">Te avisaremos cuando tu pedido esté listo</p>
             <input type="number" id="numero-cliente-input" placeholder="Tu número de ticket" style="padding:10px; width:80%; border-radius:5px; border:1px solid #ccc;" oninput="actualizarNumeroTexto()">
             <button class="boton-accion" onclick="activarMiPedido()" style="background-color:#2563eb; color:white; padding:15px 25px; border:none; border-radius:8px; font-size:18px; font-weight:bold; width:85%; margin-top:12px;">🔔 Activar alerta con sonido</button>
-            <p style="font-size:11px; color:#666; margin-top:12px; line-height:1.3;">Al activar aceptas nuestra <a href="https://arayapp.cl/privacidad" target="_blank" style="color:#2563eb; text-decoration:underline;">Política de Privacidad</a>. Tu alerta se borrará.</p>
+            <p style="font-size:11px; color:#666; margin-top:12px; line-height:1.3;">Al activar aceptas nuestra <a href="https://arayapp.cl/privacidad" target="_blank" style="color:#2563eb; text-decoration:underline;">Política de Privacidad</a>.</p>
         </div>
-        <div id="estado-pantalla" style="font-size: 20px; margin-top:20px;">Esperando conexión...</div>
+        <div id="estado-pantalla" style="font-size: 20px; margin-top:20px;">Validando acceso...</div>
         <button id="boton-cerrar" style="display:none; margin-top: 20px; padding: 15px 30px; background-color: #D52B1E; color: white; border: none; border-radius: 5px; font-size: 18px;" onclick="window.location.reload()">Cerrar Página</button>
         <video id="video-cueca" class="video-cueca" style="display:none;" loop muted playsinline preload="auto"><source src="video.mp4" type="video/mp4"></video>
     </div>
@@ -64,47 +64,49 @@ function verificarBloqueoInicial() {
     }
     document.getElementById("pantalla-registro").style.display="none"; 
     document.getElementById("texto-pedido-dinamico").innerText = `Te avisaremos cuando tu pedido #${ticketGuardado} esté listo`;
-    document.getElementById("estado-pantalla").innerHTML="<h3>⏳ Pedido #"+ticketGuardado+" en curso</h3><p>Si recargas seguirás bloqueado hasta mañana o hasta que cocina reinicie</p><button class='boton-accion' onclick='location.reload()'>🔊 Reactivar sonido</button>"; 
+    document.getElementById("estado-pantalla").innerHTML="<h3>⏳ Pedido #"+ticketGuardado+" en curso</h3><p>Sonido reactivado con este nuevo QR</p>"; 
     return ticketGuardado;
 }
 
 signInAnonymously(auth).then(async () => {
-    // AUTO-DESBLOQUEO SI COCINA REINICIA
+
+    // === BLINDAJE TOTAL ANTI-SABOTAJE ===
+    // 1. SIEMPRE exige token, sin excepción
+    const params = new URLSearchParams(location.search);
+    const tokenURL = params.get('token');
+    
+    if(!tokenURL){
+        document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1 style='font-size:50px'>⛔</h1><h2>Acceso denegado</h2><p style='font-size:18px'>Debes escanear el QR que está en caja.</p><p style='color:#666;font-size:14px'>No puedes ingresar escribiendo el link ni recargando.</p></div>";
+        return;
+    }
+
+    // 2. Valida que el token exista y no esté expirado
+    const snapToken = await get(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`));
+    if(!snapToken.exists()){
+        document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1>QR Inválido</h1><p>Este QR no existe o ya fue usado.<br>Escanea el QR nuevo que está en caja.</p></div>";
+        return;
+    }
+    if(snapToken.val().expira < Date.now()){
+        await set(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`), null);
+        document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1>QR Expirado</h1><p>El QR dura solo 2 minutos.<br>Escanea de nuevo.</p></div>";
+        return;
+    }
+
+    // 3. Quema el token (un solo uso)
+    await set(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`), null);
+    await set(ref(db, `${RUTA_BASE}/qr_usados/${tokenURL}`), { usado: Date.now() });
+    // === FIN BLINDAJE ===
+
+    // Auto-desbloqueo si cocina reinicia
     onValue(ref(db, `${RUTA_BASE}/config/ultimo_reinicio`), (snap) => {
-        if(snap.exists()){
-            const ticketGuardado = localStorage.getItem(KEY_BLOQUEO);
-            if(ticketGuardado){
-                localStorage.removeItem(KEY_BLOQUEO);
-                localStorage.removeItem(KEY_FECHA);
-                document.getElementById("estado-pantalla").innerHTML="<h3>✅ Cocina reinició, ya puedes pedir de nuevo</h3>";
-                setTimeout(()=> location.reload(), 2000);
-            }
+        if(snap.exists() && localStorage.getItem(KEY_BLOQUEO)){
+            localStorage.removeItem(KEY_BLOQUEO);
+            localStorage.removeItem(KEY_FECHA);
+            location.reload();
         }
     });
 
     let ticketBloqueado = verificarBloqueoInicial();
-    
-    if(!ticketBloqueado){
-        const params = new URLSearchParams(location.search);
-        const tokenURL = params.get('token');
-        if(!tokenURL){
-            document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1 style='font-size:40px'>⛔</h1><h2>Acceso denegado</h2><p style='font-size:18px'>Debes escanear el QR que está en caja para pedir tu número.</p></div>";
-            return;
-        }
-        const snapToken = await get(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`));
-        if(!snapToken.exists()){
-            document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1>QR Inválido</h1><p>Este QR no existe o ya fue usado.<br>Escanea de nuevo el QR en caja.</p></div>";
-            return;
-        }
-        if(snapToken.val().expira < Date.now()){
-            await set(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`), null);
-            document.getElementById("contenedor-principal").innerHTML = "<div style='text-align:center;padding:40px;'><h1>QR Expirado</h1><p>El QR dura solo 2 minutos.<br>Escanea de nuevo el QR en caja.</p></div>";
-            return;
-        }
-        await set(ref(db, `${RUTA_BASE}/qr_activos/${tokenURL}`), null);
-        await set(ref(db, `${RUTA_BASE}/qr_usados/${tokenURL}`), { usado: Date.now() });
-    }
-
     if(!ticketBloqueado) document.getElementById("estado-pantalla").innerText="Escribe tu número...";
 
     function sonarUnaVezFuerte(){
@@ -170,7 +172,7 @@ signInAnonymously(auth).then(async () => {
                 setTimeout(()=>{
                     if(intervaloAlarma) clearInterval(intervaloAlarma);
                     document.body.style.background="";
-                    document.getElementById("estado-pantalla").innerHTML="<h3>Pedido Entregado. Sigue bloqueado hoy.</h3><p>Podrás pedir de nuevo mañana o cuando cocina reinicie</p>";
+                    document.getElementById("estado-pantalla").innerHTML="<h3>Pedido Entregado.</h3>";
                     document.getElementById("video-cueca").style.display="none";
                     document.getElementById("boton-cerrar").style.display="inline-block";
                     if(wakeLock) wakeLock.release();
@@ -186,7 +188,6 @@ signInAnonymously(auth).then(async () => {
             if(!data){
                 localStorage.removeItem(KEY_BLOQUEO);
                 localStorage.removeItem(KEY_FECHA);
-                location.reload();
                 return;
             }
             if(data && data.estado==="LISTO"){
