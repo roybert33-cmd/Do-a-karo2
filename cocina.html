@@ -12,7 +12,7 @@
         <div id="monitor-numero-cocina" style="font-size: 50px; font-weight: bold; margin: 20px;">#0</div>
         <button class="boton-accion" onclick="window.siguientePedidoListo()">🔔 Avisar Siguiente Pedido</button>
         <br><br>
-        <button onclick="window.reiniciarContador()" style="background-color: #666; color: white; padding: 10px; border-radius: 5px;">🔄 Reiniciar Contador</button>
+        <button onclick="window.reiniciarContador()" style="background-color: #D52B1E; color: white; padding: 15px; border-radius: 8px; border:none; font-weight:bold; font-size:16px;">🔄 REINICIAR TODO (Contador, Pedidos, QRs y Celulares)</button>
     </div>
 
     <script type="module">
@@ -47,19 +47,27 @@
                 contadorGlobal = (data && data.valor !== undefined) ? parseInt(data.valor) : 0;
                 document.getElementById("monitor-numero-cocina").innerText = "#" + contadorGlobal;
             });
+
             window.siguientePedidoListo = () => {
                 let nuevoNumero = contadorGlobal + 1;
-                set(ref(db, `${RUTA_BASE}/contador_global`), { valor: nuevoNumero }).catch(e => console.error(e));
-                set(ref(db, `${RUTA_BASE}/pedidos/` + nuevoNumero), { estado: "LISTO", timestamp: Date.now() }).catch(e => console.error("Error enviando:", e));
+                set(ref(db, `${RUTA_BASE}/contador_global`), { valor: nuevoNumero });
+                set(ref(db, `${RUTA_BASE}/pedidos/` + nuevoNumero), { estado: "LISTO", timestamp: Date.now() });
             };
-            window.reiniciarContador = () => {
-                if(confirm("¿Seguro que quieres borrar todo Doña Karo?")) {
-                    set(ref(db, `${RUTA_BASE}/contador_global`), { valor: 0 });
-                    set(ref(db, `${RUTA_BASE}/pedidos`), null);
+
+            window.reiniciarContador = async () => {
+                if(confirm("¿Seguro que quieres borrar TODO? \n\n- Contador a 0\n- Pedidos 1,2,3\n- QR Activos y Usados\n- Desbloquear TODOS los celulares")) {
+                    try {
+                        await set(ref(db, `${RUTA_BASE}/contador_global`), { valor: 0 });
+                        await set(ref(db, `${RUTA_BASE}/pedidos`), null);
+                        await set(ref(db, `${RUTA_BASE}/qr_activos`), null);
+                        await set(ref(db, `${RUTA_BASE}/qr_usados`), null);
+                        await set(ref(db, `${RUTA_BASE}/config/ultimo_reinicio`), { timestamp: Date.now() });
+                        alert("✅ Doña Karo reiniciado completo");
+                    } catch(e) {
+                        alert("Error: " + e.message);
+                    }
                 }
             };
-        }).catch((error) => {
-            console.error("Error en la autenticación de Firebase:", error.code, error.message);
         });
     </script>
 </body>
