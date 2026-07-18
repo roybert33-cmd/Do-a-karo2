@@ -1,74 +1,124 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cocina - Doña Karo</title>
-    <link rel="stylesheet" href="diseno.css">
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cocina - Doña Karo</title>
+<style>
+  :root{ --rojo:#D52B1E; --azul:#0F2C61; --verde:#16a34a; --gris:#f3f4f6; }
+  *{box-sizing:border-box} body{margin:0;font-family:system-ui,sans-serif;background:#f8fafc;color:#111}
+  header{background:var(--azul);color:white;padding:16px 20px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:10}
+  header h1{margin:0;font-size:20px} header button{background:white;color:var(--azul);border:none;padding:10px 16px;border-radius:8px;font-weight:800;cursor:pointer}
+  .wrap{padding:16px;max-width:1100px;margin:auto}
+  .stats{display:flex;gap:12px;margin-bottom:16px}
+  .stat{flex:1;background:white;border-radius:12px;padding:12px 16px;box-shadow:0 2px 8px #0001}
+  .stat b{font-size:28px;display:block} .stat span{color:#666;font-size:12px;text-transform:uppercase;letter-spacing:1px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:14px}
+  .card{background:white;border-radius:16px;padding:16px;box-shadow:0 4px 14px #0001;border-left:6px solid var(--azul);display:flex;flex-direction:column;justify-content:space-between;animation:pop .3s}
+  @keyframes pop{from{transform:scale(.9);opacity:0}to{transform:scale(1);opacity:1}}
+  .card.listo{border-left-color:var(--verde);background:#f0fdf4}
+  .card h2{margin:0 0 6px;font-size:32px}
+  .card small{color:#666}
+  .card .hora{font-size:12px;color:#888;margin-top:8px}
+  .btn{margin-top:14px;width:100%;padding:14px;border:none;border-radius:10px;font-size:17px;font-weight:800;cursor:pointer}
+  .btn-listo{background:var(--verde);color:white}
+  .btn-entregado{background:var(--gris);color:#555}
+  .vacio{text-align:center;padding:60px 20px;color:#888}
+  .vacio span{font-size:50px;display:block}
+</style>
 </head>
 <body>
-    <div class="contenedor">
-        <h1>Panel de Cocina - Doña Karo</h1>
-        <div id="monitor-numero-cocina" style="font-size: 50px; font-weight: bold; margin: 20px;">#0</div>
-        <button class="boton-accion" onclick="window.siguientePedidoListo()">🔔 Avisar Siguiente Pedido</button>
-        <br><br>
-        <button onclick="window.reiniciarContador()" style="background-color: #D52B1E; color: white; padding: 15px; border-radius: 8px; border:none; font-weight:bold; font-size:16px;">🔄 REINICIAR TODO (Contador, Pedidos, QRs y Celulares)</button>
-    </div>
+<header>
+  <h1>🍳 Cocina Doña Karo</h1>
+  <button onclick="reiniciarTodo()">♻️ Reiniciar día</button>
+</header>
+<div class="wrap">
+  <div class="stats">
+    <div class="stat"><b id="c-espera">0</b><span>En espera</span></div>
+    <div class="stat"><b id="c-listo">0</b><span>Listos / por retirar</span></div>
+    <div class="stat"><b id="c-hora">--:--</b><span>Hora</span></div>
+  </div>
+  <div id="lista" class="grid"></div>
+  <div id="vacio" class="vacio" style="display:none"><span>🎉</span>Sin pedidos pendientes<br><small>Los pedidos aparecerán aquí automáticamente</small></div>
+</div>
 
-    <script type="module">
-        import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
-        import { getDatabase, ref, onValue, set } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
-        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
-        import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app-check.js";
+<audio id="beep" preload="auto" src="https://cdn.pixabay.com/audio/2022/03/15/audio_58b8d6a5a8.mp3"></audio>
 
-        const firebaseConfig = {
-            apiKey: "AIzaSyB9kLWRc6t7_XNBhlC10a4jmtbCntxOEYo",
-            authDomain: "avisador-arayapp.firebaseapp.com",
-            databaseURL: "https://avisador-arayapp-default-rtdb.firebaseio.com",
-            projectId: "avisador-arayapp",
-            storageBucket: "avisador-arayapp.firebasestorage.app",
-            messagingSenderId: "337997002279",
-            appId: "1:337997002279:web:6dc307a6e474432e64c002"
-        };
+<script type="module">
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import { getDatabase, ref, onValue, update, set, get } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
+import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app-check.js";
 
-        const app = initializeApp(firebaseConfig);
-        initializeAppCheck(app, {
-            provider: new ReCaptchaV3Provider('6LcPPFEtAAAAAIVtKgVFo1jtAQWRESDHHnCjMKaE'),
-            isTokenAutoRefreshEnabled: true
-        });
-        const db = getDatabase(app);
-        const auth = getAuth(app);
-        const RUTA_BASE = 'dona_karo';
+const firebaseConfig = { apiKey: "AIzaSyB9kLWRc6t7_XNBhlC10a4jmtbCntxOEYo", authDomain: "avisador-arayapp.firebaseapp.com", databaseURL: "https://avisador-arayapp-default-rtdb.firebaseio.com", projectId: "avisador-arayapp", storageBucket: "avisador-arayapp.firebasestorage.app", messagingSenderId: "337997002279", appId: "1:337997002279:web:6dc307a6e474432e64c002" };
+const app = initializeApp(firebaseConfig);
+initializeAppCheck(app, { provider: new ReCaptchaV3Provider('6LcPPFEtAAAAAIVtKgVFo1jtAQWRESDHHnCjMKaE'), isTokenAutoRefreshEnabled: true });
+const db = getDatabase(app);
+const auth = getAuth(app);
+const RUTA_BASE = 'dona_karo';
 
-        signInAnonymously(auth).then(() => {
-            let contadorGlobal = 0;
-            onValue(ref(db, `${RUTA_BASE}/contador_global`), (snapshot) => {
-                const data = snapshot.val();
-                contadorGlobal = (data && data.valor !== undefined) ? parseInt(data.valor) : 0;
-                document.getElementById("monitor-numero-cocina").innerText = "#" + contadorGlobal;
-            });
+const listaEl = document.getElementById("lista");
+const vacioEl = document.getElementById("vacio");
+const beep = document.getElementById("beep");
 
-            window.siguientePedidoListo = () => {
-                let nuevoNumero = contadorGlobal + 1;
-                set(ref(db, `${RUTA_BASE}/contador_global`), { valor: nuevoNumero });
-                set(ref(db, `${RUTA_BASE}/pedidos/` + nuevoNumero), { estado: "LISTO", timestamp: Date.now() });
-            };
+function formatoHora(ts){ return new Date(ts).toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}) }
 
-            window.reiniciarContador = async () => {
-                if(confirm("¿Seguro que quieres borrar TODO? \n\n- Contador a 0\n- Pedidos 1,2,3\n- QR Activos y Usados\n- Desbloquear TODOS los celulares")) {
-                    try {
-                        await set(ref(db, `${RUTA_BASE}/contador_global`), { valor: 0 });
-                        await set(ref(db, `${RUTA_BASE}/pedidos`), null);
-                        await set(ref(db, `${RUTA_BASE}/qr_activos`), null);
-                        await set(ref(db, `${RUTA_BASE}/qr_usados`), null);
-                        await set(ref(db, `${RUTA_BASE}/config/ultimo_reinicio`), { timestamp: Date.now() });
-                        alert("✅ Doña Karo reiniciado completo");
-                    } catch(e) {
-                        alert("Error: " + e.message);
-                    }
-                }
-            };
-        });
-    </script>
+signInAnonymously(auth).then(()=>{
+  setInterval(()=>{ document.getElementById("c-hora").innerText = new Date().toLocaleTimeString('es-CL',{hour:'2-digit',minute:'2-digit'}) },1000);
+
+  onValue(ref(db, `${RUTA_BASE}/pedidos`), (snap)=>{
+    listaEl.innerHTML = "";
+    let espera=0, listo=0;
+    let pedidos = [];
+    snap.forEach(c=>{ pedidos.push({id:c.key, ...c.val()}) });
+    pedidos.sort((a,b)=> (a.timestamp||0)-(b.timestamp||0));
+
+    if(pedidos.length===0){ vacioEl.style.display="block"; }
+    else vacioEl.style.display="none";
+
+    pedidos.forEach(p=>{
+      if(p.estado==="ESPERA") espera++;
+      if(p.estado==="LISTO") listo++;
+      
+      const div = document.createElement("div");
+      div.className = "card" + (p.estado==="LISTO" ? " listo" : "");
+      div.innerHTML = `
+        <div>
+          <small>PEDIDO</small>
+          <h2>#${p.id}</h2>
+          <small>${p.estado}</small>
+          <div class="hora">🕒 ${formatoHora(p.timestamp)}</div>
+        </div>
+        ${p.estado==="ESPERA" ? `<button class="btn btn-listo" onclick="marcarListo('${p.id}')">✅ MARCAR LISTO</button>` : `<button class="btn btn-entregado" disabled>Esperando retiro...</button>`}
+      `;
+      listaEl.appendChild(div);
+    });
+
+    document.getElementById("c-espera").innerText = espera;
+    document.getElementById("c-listo").innerText = listo;
+
+    // Sonido cuando entra uno nuevo
+    if(pedidos.length>0 && pedidos[pedidos.length-1].estado==="ESPERA"){
+        // solo suena si es de los ultimos 5 seg
+        if(Date.now() - pedidos[pedidos.length-1].timestamp < 5000){
+            beep.play().catch(()=>{});
+        }
+    }
+  });
+});
+
+window.marcarListo = async (id)=>{
+  await update(ref(db, `${RUTA_BASE}/pedidos/${id}`), { estado:"LISTO", timestamp_listo: Date.now() });
+};
+
+window.reiniciarTodo = async ()=>{
+  if(!confirm("¿Borrar TODOS los pedidos del día y desbloquear clientes?")) return;
+  const snap = await get(ref(db, `${RUTA_BASE}/pedidos`));
+  if(snap.exists()){
+    await set(ref(db, `${RUTA_BASE}/pedidos`), null);
+  }
+  await set(ref(db, `${RUTA_BASE}/config/ultimo_reinicio`), Date.now());
+  alert("Día reiniciado");
+};
+</script>
 </body>
 </html>
