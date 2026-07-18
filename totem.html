@@ -2,85 +2,51 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Totem QR - Doña Karo</title>
+<title>Totem - Doña Karo</title>
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@600;700&family=Inter:wght@400;600&display=swap" rel="stylesheet">
 <style>
-  body{text-align:center;font-family:sans-serif;padding:20px; background: white;}
-  #qrcode{display:flex;justify-content:center;margin:20px}
-  #log{color:#c00; font-size: 12px; white-space: pre-wrap;}
-  #estado{font-size: 22px; font-weight: bold; color: #16a34a;}
+  :root{--rojo:#E63946;--azul:#1D3557;--amarillo:#FFB703;--bg:#FFFDF7}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);font-family:'Inter',sans-serif;display:flex;min-height:100vh;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:20px}
+  .brand{font-family:'Fredoka',sans-serif;font-size:22px;color:var(--azul);letter-spacing:1px;margin-bottom:10px}
+  .brand span{color:var(--rojo)}
+  h1{font-family:'Fredoka',sans-serif;font-size:46px;line-height:0.9;margin:0;color:var(--azul)} h1 b{color:var(--rojo)}
+  .qr-wrap{margin:26px 0;background:white;padding:18px;border-radius:28px;box-shadow:0 20px 40px #1D355714,0 0 0 8px #FFB70330;position:relative}
+  .qr-wrap.pulse{animation:pulse 1.2s infinite} @keyframes pulse{0%{box-shadow:0 20px 40px #1D355714,0 0 0 8px #FFB70330}50%{box-shadow:0 20px 40px #1D355714,0 0 0 18px #FFB70330}100%{box-shadow:0 20px 40px #1D355714,0 0 0 8px #FFB70330}}
+  #qrcode{display:flex;justify-content:center}
+  .badge{display:inline-flex;align-items:center;gap:8px;background:var(--azul);color:white;padding:10px 18px;border-radius:999px;font-weight:700;font-size:16px;margin-top:10px}
+  .badge.ok{background:#16a34a} .badge.scan{background:#ea580c}
+  #log{font-size:11px;color:#aaa;margin-top:12px}
+  footer{margin-top:20px;color:#888;font-size:12px}
 </style>
 </head>
 <body>
-<h1>ESCANEA PARA PEDIR</h1>
-<div id="qrcode"></div>
-<p id="estado">Generando QR...</p>
-<p id="log"></p>
-
+<div class="brand">DOÑA <span>KARO</span> • SABOR CASERO</div>
+<h1>ESCANEA<br><b>PARA PEDIR</b></h1>
+<div id="qrbox" class="qr-wrap pulse"><div id="qrcode"></div></div>
+<div id="estado" class="badge ok">● QR LISTO</div>
+<div id="log"></div>
+<footer>El QR cambia solo al escanear • 1 uso por cliente</footer>
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import { getDatabase, ref, set, onValue } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-database.js";
 import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
 import { initializeAppCheck, ReCaptchaV3Provider } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app-check.js";
-
 const firebaseConfig = { apiKey: "AIzaSyB9kLWRc6t7_XNBhlC10a4jmtbCntxOEYo", authDomain: "avisador-arayapp.firebaseapp.com", databaseURL: "https://avisador-arayapp-default-rtdb.firebaseio.com", projectId: "avisador-arayapp", storageBucket: "avisador-arayapp.firebasestorage.app", messagingSenderId: "337997002279", appId: "1:337997002279:web:6dc307a6e474432e64c002" };
 const app = initializeApp(firebaseConfig);
-const appCheck = initializeAppCheck(app, {
-  provider: new ReCaptchaV3Provider('6LcPPFEtAAAAAIVtKgVFo1jtAQWRESDHHnCjMKaE'),
-  isTokenAutoRefreshEnabled: true
-});
-const db = getDatabase(app); 
-const auth = getAuth(app);
-const RUTA_BASE = 'dona_karo';
-
-let desuscribirAnterior = null;
-let tokenActual = null;
-
-signInAnonymously(auth).then(async ()=>{
-  // Espera a que AppCheck tenga token
-  await new Promise(r => setTimeout(r, 800));
-
+initializeAppCheck(app, { provider: new ReCaptchaV3Provider('6LcPPFEtAAAAAIVtKgVFo1jtAQWRESDHHnCjMKaE'), isTokenAutoRefreshEnabled: true });
+const db=getDatabase(app);const auth=getAuth(app);const RUTA_BASE='dona_karo';
+let desuscribir=null, tokenActual=null;
+signInAnonymously(auth).then(async()=>{
+  await new Promise(r=>setTimeout(r,800));
   async function generarQR(){
-    if(desuscribirAnterior){
-        desuscribirAnterior();
-        desuscribirAnterior = null;
-    }
-
-    tokenActual = "t" + Date.now() + Math.floor(Math.random()*9999);
-    const tokenDeEstaVuelta = tokenActual;
-    
-    const baseUrl = location.href.substring(0, location.href.lastIndexOf('/') + 1);
-    const url = baseUrl + "cliente.html?token=" + tokenDeEstaVuelta;
-    
-    document.getElementById("qrcode").innerHTML="";
-    new QRCode(document.getElementById("qrcode"), { text: url, width: 300, height: 300 });
-
-    try{
-        await set(ref(db, `${RUTA_BASE}/qr_activos/${tokenDeEstaVuelta}`), { expira: Date.now() + 120000 });
-        document.getElementById("estado").innerText = "✅ QR LISTO - ESCANEA";
-        document.getElementById("estado").style.color = "#16a34a";
-        document.getElementById("log").innerText = tokenDeEstaVuelta;
-    }catch(e){
-        document.getElementById("estado").innerText = "❌ Error Firebase";
-        document.getElementById("log").innerText = e.code + "\n" + e.message + "\n\nSi dice AppCheck, debes agregar 3-cmd.github.io en Firebase > AppCheck";
-        console.error(e);
-        return;
-    }
-
-    const tokenRef = ref(db, `${RUTA_BASE}/qr_activos/${tokenDeEstaVuelta}`);
-    desuscribirAnterior = onValue(tokenRef, (snap) => {
-        if(tokenDeEstaVuelta === tokenActual && !snap.exists()){
-            document.getElementById("estado").innerText = "⚡ Escaneado, generando siguiente...";
-            document.getElementById("estado").style.color = "#ea580c";
-            if(desuscribirAnterior){
-                desuscribirAnterior();
-                desuscribirAnterior = null;
-            }
-            setTimeout(generarQR, 400);
-        }
-    });
-  }
-  generarQR();
+    if(desuscribir){desuscribir();desuscribir=null}
+    tokenActual="t"+Date.now()+Math.floor(Math.random()*9999);
+    const t=tokenActual;const baseUrl=location.href.substring(0,location.href.lastIndexOf('/')+1);
+    document.getElementById("qrcode").innerHTML="";new QRCode(document.getElementById("qrcode"),{text:baseUrl+"cliente.html?token="+t,width:280,height:280});
+    try{await set(ref(db,`${RUTA_BASE}/qr_activos/${t}`),{expira:Date.now()+120000});document.getElementById("estado").className="badge ok";document.getElementById("estado").innerText="● QR LISTO - ESCANEA";document.getElementById("log").innerText=t;document.getElementById("qrbox").classList.add("pulse")}catch(e){document.getElementById("estado").className="badge";document.getElementById("estado").innerText="❌ "+e.message}
+    desuscribir=onValue(ref(db,`${RUTA_BASE}/qr_activos/${t}`),(s)=>{if(t===tokenActual&&!s.exists()){document.getElementById("estado").className="badge scan";document.getElementById("estado").innerText="⚡ Escaneado, siguiente...";document.getElementById("qrbox").classList.remove("pulse");if(desuscribir){desuscribir();desuscribir=null}setTimeout(generarQR,400)}});
+  } generarQR();
 });
 </script>
 </body>
