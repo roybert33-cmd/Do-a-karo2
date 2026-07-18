@@ -7,17 +7,16 @@
 <style>
   body{text-align:center;font-family:sans-serif;padding:20px; background: white;}
   #qrcode{display:flex;justify-content:center;margin:20px}
-  #log{color:#666; font-size: 12px;}
-  #estado{font-size: 18px; font-weight: bold; color: #2563eb;}
+  #log{color:#666; font-size: 11px;}
+  #estado{font-size: 22px; font-weight: bold; color: #16a34a;}
 </style>
 </head>
 <body>
 <h1>ESCANEA PARA PEDIR</h1>
 <div id="qrcode"></div>
 <p id="estado">Generando QR...</p>
-<p id="timer" style="font-size:16px;"></p>
 <p id="log"></p>
-<p>Doña Karo</p>
+<p style="font-size:12px; color:#999;">Doña Karo - Se renueva solo al escanear</p>
 
 <script type="module">
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
@@ -32,28 +31,23 @@ const db = getDatabase(app);
 const auth = getAuth(app);
 const RUTA_BASE = 'dona_karo';
 
-let intervaloTimer = null;
 let listenerTokenActual = null;
 let tokenActual = null;
 
 signInAnonymously(auth).then(()=>{
   function generarQR(){
-    // Limpia listener del QR anterior
     if(listenerTokenActual && tokenActual){
         off(ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`), listenerTokenActual);
     }
-    clearInterval(intervaloTimer);
 
     tokenActual = "t" + Date.now() + Math.floor(Math.random()*9999);
-    const expira = Date.now() + 120000;
     
-    set(ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`), { expira: expira })
+    // Sin expira, dura hasta que lo escaneen. Ahorra validaciones.
+    set(ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`), { expira: Date.now() + 86400000 })
       .then(()=>{ 
-        document.getElementById("log").innerText = "QR: " + tokenActual;
         document.getElementById("estado").innerText = "✅ QR LISTO - ESCANEA";
-        document.getElementById("estado").style.color = "#16a34a";
-      })
-      .catch(e=>{ document.getElementById("log").innerText = "ERROR: " + e.message; });
+        document.getElementById("log").innerText = tokenActual;
+      });
 
     const baseUrl = location.href.substring(0, location.href.lastIndexOf('/') + 1);
     const url = baseUrl + "cliente.html?token=" + tokenActual;
@@ -61,28 +55,15 @@ signInAnonymously(auth).then(()=>{
     document.getElementById("qrcode").innerHTML="";
     new QRCode(document.getElementById("qrcode"), { text: url, width: 300, height: 300 });
 
-    // --- DETECTOR DE ESCANEO ---
-    // Si el cliente escanea, el cliente borra el token. Lo detectamos y generamos uno nuevo al tiro.
+    // Solo genera uno nuevo cuando el cliente lo quema
     const tokenRef = ref(db, `${RUTA_BASE}/qr_activos/${tokenActual}`);
     listenerTokenActual = onValue(tokenRef, (snap) => {
         if(!snap.exists()){
-            document.getElementById("estado").innerText = "⚡ Cliente detectado, generando nuevo...";
-            document.getElementById("estado").style.color = "#ea580c";
-            setTimeout(generarQR, 500); // Genera nuevo en 0.5 seg para agilizar fila
+            document.getElementById("estado").innerText = "⚡ Escaneado, generando siguiente...";
+            setTimeout(generarQR, 400);
         }
     });
-
-    // Timer de respaldo por si nadie escanea, expira a los 120s
-    let seg=120;
-    intervaloTimer = setInterval(()=>{ 
-        seg--; 
-        document.getElementById("timer").innerText=`Se renueva en ${seg}s`;
-        if(seg<=0){
-            generarQR();
-        }
-    },1000);
   }
-  
   generarQR();
 });
 </script>
